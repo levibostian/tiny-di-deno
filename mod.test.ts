@@ -289,3 +289,87 @@ Deno.test("store can be typed easily", () => {
   assertEquals(store.get("a").value, 1);
   assertEquals(store.get("b").value, 2);
 });
+
+Deno.test("override service - given original store and a store copy, expect original to be unmodified", () => {
+  let originalCreatedTimes = 0;
+  let overrideCreatedTimes = 0;
+  
+  const originalStoreDef = defineStore()
+    .add("A", () => {
+      originalCreatedTimes++;
+      return { value: "original", type: "original" };
+    })
+    .add("B", (store) => {
+      return { a: store.get("A") };
+    });
+
+  const overriddenStoreDef = originalStoreDef
+    .override("A", () => {
+      overrideCreatedTimes++;
+      return { value: "overridden", type: "mock" };
+    });
+
+  const originalStore = originalStoreDef.finalize();
+  const overriddenStore = overriddenStoreDef.finalize();
+
+  // Original store should use original implementation
+  const originalA = originalStore.get("A");
+  assertEquals(originalA.value, "original");
+  assertEquals(originalA.type, "original");
+  assertEquals(originalCreatedTimes, 1);
+  assertEquals(overrideCreatedTimes, 0);
+
+  // Overridden store should use overridden implementation
+  const overriddenA = overriddenStore.get("A");
+  assertEquals(overriddenA.value, "overridden");
+  assertEquals(overriddenA.type, "mock");
+  assertEquals(originalCreatedTimes, 1);
+  assertEquals(overrideCreatedTimes, 1);
+
+  // B service should use the overridden A
+  const overriddenB = overriddenStore.get("B");
+  assertEquals(overriddenB.a.value, "overridden");
+  assertEquals(overriddenB.a.type, "mock");
+});
+
+Deno.test("override service in child store", () => {
+  const parentStore = defineStore()
+    .add("shared", () => ({ value: "parent" }))
+    .finalize();
+
+  const childDef = parentStore.createChild()
+    .add("child", (store) => {
+      return { shared: store.get("shared") };
+    });
+
+  const overriddenChildDef = childDef
+    .override("shared", () => ({ value: "overridden" }));
+
+  const normalChildStore = childDef.finalize();
+  const overriddenChildStore = overriddenChildDef.finalize();
+
+  // Normal child should use parent's shared service
+  assertEquals(normalChildStore.get("shared").value, "parent");
+  assertEquals(normalChildStore.get("child").shared.value, "parent");
+
+  // Overridden child should use overridden shared service
+  assertEquals(overriddenChildStore.get("shared").value, "overridden");
+  assertEquals(overriddenChildStore.get("child").shared.value, "overridden");
+});
+
+Deno.test("override with async service", async () => {
+  const storeDef = defineStore()
+    .add("async", async () => {
+      await new Promise(resolve => setTimeout(resolve, 1));
+      return { value: "original" };
+    });
+
+  const overriddenStoreDef = storeDef
+    .override("async", async () => {
+      return Promise.resolve({ value: "mocked" });
+    });
+
+  const store = overriddenStoreDef.finalize();
+  const result = await store.get("async");
+  assertEquals(result.value, "mocked");
+});

@@ -205,6 +205,21 @@ export class StoreDefinition<TServices extends object> {
     return this.add(name, value);
   }
 
+  /**
+   * Overrides an existing service factory in the store definition.
+   * This is useful for testing where you want to replace a service
+   * with a mock or test implementation.
+   */
+  override<TName extends keyof TServices>(
+    name: TName,
+    value: (services: Store<TServices>) => TServices[TName],
+  ): StoreDefinition<TServices> {
+    return new StoreDefinition({
+      ...this.#factories,
+      [name]: value,
+    } as any, this.#parentStore) as any;
+  }
+
   /** Create the store. */
   finalize(): Store<TServices> {
     return new Store(this.#factories, this.#parentStore);

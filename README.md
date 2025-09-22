@@ -78,3 +78,23 @@ Deno.serve(async (req) => {
   return handleRequest(store, req);
 });
 ```
+
+## Overriding Services for Testing Example
+
+```ts
+import { defineStore } from "@levibostian/tiny-di";
+
+Deno.test("user service test", async () => {
+  const store = getProductionStore() // assuming you have a function in your codebase that returns the production store definition    
+    // override the db service with a mock
+    .override("db", () => {
+      return new MockDatabase();
+    })
+    .finalize();
+
+  // get instance of user service without overriding it. It will use the mock db. 
+  const userService = store.get("userService");
+  const user = await userService.getUser(1);
+  assertEquals(user.id, 1);
+  assertEquals(user.name, "Test User");
+});
