@@ -1,0 +1,15 @@
+{
+  "exports": "./mod.ts",
+  "lint": {
+    "rules": {
+      "exclude": [
+        "ban-types",
+        "no-explicit-any"
+      ]
+    }
+  },
+  "license": "MIT",
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1"
+  }
+}
