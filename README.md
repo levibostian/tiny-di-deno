@@ -98,3 +98,9 @@ Deno.test("user service test", async () => {
   assertEquals(user.id, 1);
   assertEquals(user.name, "Test User");
 });
+```
+
+# Credits 
+
+This project is based on https://github.com/dsherret/service-store/ with added features. Be sure to give this project a look! 
+
