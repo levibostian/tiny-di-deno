@@ -373,3 +373,121 @@ Deno.test("override with async service", async () => {
   const result = await store.get("async");
   assertEquals(result.value, "mocked");
 });
+
+Deno.test("override should take precedence over memorized values", async () => {
+  let syncOriginalCallCount = 0;
+  let syncOverrideCallCount = 0;
+  let asyncOriginalCallCount = 0;
+  let asyncOverrideCallCount = 0;
+
+  const storeDef = defineStore()
+    .add("syncService", () => {
+      syncOriginalCallCount++;
+      return { value: "original", callCount: syncOriginalCallCount };
+    })
+    .add("asyncService", async () => {
+      asyncOriginalCallCount++;
+      await new Promise(resolve => setTimeout(resolve, 1));
+      return { value: "original", callCount: asyncOriginalCallCount };
+    });
+
+  const store = storeDef.finalize();
+
+  // Test sync service memorization
+  const firstSyncCall = store.get("syncService");
+  assertEquals(firstSyncCall.value, "original");
+  assertEquals(firstSyncCall.callCount, 1);
+  assertEquals(syncOriginalCallCount, 1);
+
+  // Get it again to confirm memorization is working
+  const secondSyncCall = store.get("syncService");
+  assertEquals(secondSyncCall.value, "original");
+  assertEquals(secondSyncCall.callCount, 1); // Same object reference
+  assertEquals(syncOriginalCallCount, 1); // Factory not called again
+
+  // Test async service memorization
+  const firstAsyncCall = await store.get("asyncService");
+  assertEquals(firstAsyncCall.value, "original");
+  assertEquals(firstAsyncCall.callCount, 1);
+  assertEquals(asyncOriginalCallCount, 1);
+
+  // Get it again to confirm memorization is working
+  const secondAsyncCall = await store.get("asyncService");
+  assertEquals(secondAsyncCall.value, "original");
+  assertEquals(secondAsyncCall.callCount, 1); // Same object reference
+  assertEquals(asyncOriginalCallCount, 1); // Factory not called again
+
+  // Now override both services - these should take precedence over memorized values
+  const overriddenStoreDef = storeDef
+    .override("syncService", () => {
+      syncOverrideCallCount++;
+      return { value: "overridden", callCount: syncOverrideCallCount };
+    })
+    .override("asyncService", async () => {
+      asyncOverrideCallCount++;
+      await new Promise(resolve => setTimeout(resolve, 1));
+      return { value: "overridden", callCount: asyncOverrideCallCount };
+    });
+
+  const overriddenStore = overriddenStoreDef.finalize();
+
+  // The overridden store should return the overridden values, not the memorized originals
+  const overriddenSyncResult = overriddenStore.get("syncService");
+  assertEquals(overriddenSyncResult.value, "overridden");
+  assertEquals(overriddenSyncResult.callCount, 1);
+  assertEquals(syncOverrideCallCount, 1);
+  assertEquals(syncOriginalCallCount, 1); // Original factory should not be called again
+
+  const overriddenAsyncResult = await overriddenStore.get("asyncService");
+  assertEquals(overriddenAsyncResult.value, "overridden");
+  assertEquals(overriddenAsyncResult.callCount, 1);
+  assertEquals(asyncOverrideCallCount, 1);
+  assertEquals(asyncOriginalCallCount, 1); // Original factory should not be called again
+});
+
+Deno.test("override should work with child stores and memorized values", () => {
+  let parentCallCount = 0;
+  let overrideCallCount = 0;
+
+  const parentStore = defineStore()
+    .add("parentService", () => {
+      parentCallCount++;
+      return { value: "parent", callCount: parentCallCount };
+    })
+    .finalize();
+
+  // Access the parent service to memorize it
+  const parentResult = parentStore.get("parentService");
+  assertEquals(parentResult.value, "parent");
+  assertEquals(parentCallCount, 1);
+
+  // Create child store definition and override the parent service
+  const childStoreDef = parentStore.createChild()
+    .add("childService", (store) => {
+      const parent = store.get("parentService");
+      return { parentValue: parent.value, childValue: "child" };
+    })
+    .override("parentService", () => {
+      overrideCallCount++;
+      return { value: "overridden", callCount: overrideCallCount };
+    });
+
+  const childStore = childStoreDef.finalize();
+
+  // The child store should use the overridden parent service, not the memorized one
+  const childParentResult = childStore.get("parentService");
+  assertEquals(childParentResult.value, "overridden");
+  assertEquals(childParentResult.callCount, 1);
+  assertEquals(overrideCallCount, 1);
+  assertEquals(parentCallCount, 1); // Parent factory should not be called again
+
+  // The child service should also receive the overridden parent service
+  const childServiceResult = childStore.get("childService");
+  assertEquals(childServiceResult.parentValue, "overridden");
+  assertEquals(childServiceResult.childValue, "child");
+
+  // Verify parent store is unaffected and still returns memorized value
+  const parentResultAgain = parentStore.get("parentService");
+  assertEquals(parentResultAgain.value, "parent");
+  assertEquals(parentCallCount, 1); // Still no additional calls
+});
